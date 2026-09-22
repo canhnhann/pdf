@@ -1,0 +1,1346 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF.com — Tách file theo lô</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  :root{
+    --bg: #1f2420;
+    --paper: #f1ead8;
+    --card: #f7f2e4;
+    --ink: #241f16;
+    --ink-soft: #5b5340;
+    --ink-green: #1f3a2e;
+    --rust: #c1440e;
+    --rust-dark: #9c360a;
+    --mustard: #d8a73e;
+    --line: #c9bfa5;
+    --ok: #2f6b4f;
+    --err: #ac2b1e;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background: var(--bg);
+    background-image:
+      radial-gradient(circle at 1px 1px, rgba(241,234,216,0.05) 1px, transparent 1px);
+    background-size: 22px 22px;
+    color: var(--ink);
+    font-family: 'IBM Plex Sans', sans-serif;
+    min-height: 100vh;
+    padding: 40px 16px 80px;
+  }
+  .wrap{ max-width: 720px; margin: 0 auto; }
+
+  header.top{ margin-bottom: 34px; }
+  .eyebrow{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--mustard);
+    display:flex; align-items:center; gap:10px;
+    margin-bottom: 10px;
+  }
+  .eyebrow::before{ content:"✂"; color: var(--rust); font-size:14px; }
+  h1{
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--paper);
+    font-size: clamp(28px, 5vw, 40px);
+    line-height: 1.15;
+    margin: 0 0 10px;
+    letter-spacing: -0.01em;
+  }
+  header.top p{
+    color: #b9b39e;
+    font-size: 15px;
+    line-height: 1.5;
+    margin: 0;
+    max-width: 52ch;
+  }
+
+  .module{
+    position: relative;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 26px 26px 28px;
+    margin-bottom: 26px;
+    box-shadow: 0 14px 30px -18px rgba(0,0,0,0.55);
+    opacity: 0;
+    transform: translateY(8px);
+    animation: rise 0.35s ease forwards;
+  }
+  @keyframes rise{ to{ opacity:1; transform: translateY(0); } }
+
+  /* torn ticket-stub perforation edges */
+  .module::before, .module::after{
+    content:"";
+    position:absolute; left:0; right:0; height:12px;
+    background-image: radial-gradient(circle at 11px 6px, var(--bg) 6px, transparent 6.5px);
+    background-size: 22px 22px;
+    background-repeat: repeat-x;
+  }
+  .module::before{ top:-7px; }
+  .module::after{ bottom:-7px; transform: scaleY(-1); }
+
+  .stub{
+    display:flex; align-items:center; gap:12px;
+    margin-bottom: 18px;
+  }
+  .stub-title{
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 14px; font-weight:600;
+    color: var(--ink);
+    letter-spacing: 0.02em;
+  }
+  .stub-line{ flex:1; border-top: 1px dashed var(--line); }
+
+  /* step indicator */
+  .step-bar{
+    display:flex; align-items:center;
+    margin-bottom: 26px;
+    padding: 0 2px;
+  }
+  .step-item{
+    display:flex; align-items:center; gap:8px;
+    background:none; border:none; padding:4px 2px;
+    font-family:'IBM Plex Mono', monospace;
+    cursor:pointer;
+  }
+  .step-item:disabled{ cursor:default; }
+  .step-num{
+    width:22px; height:22px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font-size:11px; font-weight:700;
+    background: var(--line); color: var(--bg);
+    flex-shrink:0;
+  }
+  .step-label{
+    font-size:12px; font-weight:600;
+    color: #8f8973;
+    letter-spacing:0.02em;
+    white-space:nowrap;
+  }
+  .step-item.active .step-num{ background: var(--rust); color:#fff; }
+  .step-item.active .step-label{ color: var(--paper); }
+  .step-item.done .step-num{ background: var(--ink-green); color:#fff; }
+  .step-item.done .step-label{ color: #b9b39e; }
+  .step-sep{
+    flex:1; height:1px; background: #4a5049;
+    margin: 0 8px; min-width:10px;
+  }
+
+  .step-nav{
+    display:flex; align-items:center; justify-content:space-between;
+    gap:12px; margin-top:22px;
+  }
+  .btn-back{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:13px; font-weight:600;
+    background:none; color: var(--ink-soft);
+    border:1px solid var(--line); border-radius:3px;
+    padding:10px 16px; cursor:pointer;
+  }
+  .btn-back:hover{ border-color: var(--ink-soft); }
+
+  /* Module 1: dropzone */
+  .dropzone{
+    border: 2px dashed var(--line);
+    border-radius: 4px;
+    padding: 34px 18px;
+    text-align:center;
+    cursor:pointer;
+    transition: border-color .15s ease, background .15s ease;
+    background: rgba(255,255,255,0.25);
+  }
+  .dropzone:hover, .dropzone.drag{
+    border-color: var(--rust);
+    background: rgba(193,68,14,0.06);
+  }
+  .dropzone svg{ width:34px; height:34px; margin-bottom:10px; color: var(--rust); }
+  .dropzone .dz-title{ font-weight:600; font-size:15px; margin-bottom:4px; }
+  .dropzone .dz-sub{ font-size:13px; color: var(--ink-soft); }
+  input[type=file]{ display:none; }
+
+  .file-card{
+    display:flex; align-items:center; gap:14px;
+    padding: 14px 16px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: #fffcf3;
+  }
+  .file-icon{
+    width:38px; height:38px; flex-shrink:0;
+    background: var(--rust); color:#fff;
+    display:flex; align-items:center; justify-content:center;
+    border-radius: 3px;
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 10px; font-weight:700;
+  }
+  .file-meta{ flex:1; min-width:0; }
+  .file-name{ font-weight:600; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .file-sub{ font-size:12.5px; color: var(--ink-soft); font-family:'IBM Plex Mono', monospace; margin-top:2px; }
+  .file-clear{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px; color: var(--rust); background:none; border:none; cursor:pointer;
+    text-decoration: underline; text-underline-offset:2px; padding:4px;
+  }
+
+  /* thumbnail page picker */
+  .page-grid-wrap{ margin-top:16px; }
+  .page-grid-head{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    margin-bottom:8px; flex-wrap:wrap;
+  }
+  .page-grid-head .field-label{ margin:0; }
+  .btn-select{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px; font-weight:600;
+    background: var(--rust); color:#fff;
+    border:none; border-radius:3px;
+    padding: 7px 12px;
+    cursor:pointer;
+  }
+  .btn-select:disabled{ background:#b8ae95; cursor:not-allowed; }
+  .btn-select.ghost{
+    background:transparent; color: var(--ink-soft);
+    border:1px solid var(--line);
+  }
+  .page-grid{
+    display:grid;
+    grid-template-columns: repeat(auto-fill, minmax(58px, 1fr));
+    gap:8px;
+    max-height:380px;
+    overflow-y:auto;
+    padding:8px;
+    border:1px solid var(--line);
+    border-radius:3px;
+    background: rgba(255,255,255,0.25);
+    user-select:none;
+  }
+  .page-thumb{
+    position:relative;
+    cursor:pointer;
+    border:2px solid var(--line);
+    border-radius:3px;
+    overflow:hidden;
+    background:#fff;
+    aspect-ratio: 0.72;
+    display:flex; align-items:center; justify-content:center;
+    transition: border-color .1s ease, box-shadow .1s ease;
+  }
+  .page-thumb:hover{ border-color: var(--mustard); }
+  .page-thumb canvas{ width:100%; height:100%; object-fit:contain; display:block; }
+  .page-thumb.selected{
+    border-color: var(--rust);
+    box-shadow: 0 0 0 2px rgba(193,68,14,0.28) inset;
+  }
+  .page-thumb .pg-num{
+    position:absolute; bottom:2px; right:3px;
+    font-family:'IBM Plex Mono', monospace; font-size:9px;
+    background: rgba(31,36,32,0.75); color:#fff;
+    padding: 1px 4px; border-radius:2px; line-height:1.4;
+  }
+  .page-thumb .pg-check{
+    position:absolute; top:3px; left:3px;
+    width:15px; height:15px; border-radius:50%;
+    background: var(--rust); color:#fff;
+    font-size:10px; display:none; align-items:center; justify-content:center;
+  }
+  .page-thumb.selected .pg-check{ display:flex; }
+  .page-thumb .pg-zoom{
+    position:absolute; top:3px; right:3px;
+    width:17px; height:17px; border-radius:3px;
+    background: rgba(31,36,32,0.7); color:#fff;
+    border:none; font-size:11px; line-height:1;
+    display:flex; align-items:center; justify-content:center;
+    cursor:zoom-in; opacity:0; transition: opacity .12s ease, background .12s ease;
+  }
+  .page-thumb:hover .pg-zoom, .page-thumb:focus-within .pg-zoom{ opacity:1; }
+  .page-thumb .pg-zoom:hover{ background: var(--rust); }
+
+  /* lightbox: enlarged page viewer */
+  .pdf-lightbox{
+    position:fixed; inset:0; z-index:1000;
+    background: rgba(15,17,14,0.86);
+    display:none; align-items:center; justify-content:center;
+    padding: 20px;
+  }
+  .pdf-lightbox.open{ display:flex; }
+  .lb-panel{
+    display:flex; flex-direction:column;
+    width:min(880px, 100%); height:min(88vh, 900px);
+    background: var(--card); border:1px solid var(--line); border-radius:4px;
+    overflow:hidden;
+  }
+  .lb-head{
+    display:flex; align-items:center; justify-content:space-between;
+    gap:10px; padding:10px 14px; border-bottom:1px solid var(--line);
+    background: var(--paper); flex-wrap:wrap;
+  }
+  .lb-title{
+    font-family:'IBM Plex Mono', monospace; font-size:12.5px; font-weight:600;
+    color: var(--ink); white-space:nowrap;
+  }
+  .lb-controls{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .lb-btn{
+    font-family:'IBM Plex Mono', monospace; font-size:12px; font-weight:600;
+    background:#fffcf3; color: var(--ink-soft); border:1px solid var(--line);
+    border-radius:3px; padding:6px 10px; cursor:pointer; line-height:1;
+  }
+  .lb-btn:hover{ border-color: var(--rust); color: var(--ink); }
+  .lb-btn:disabled{ opacity:0.4; cursor:not-allowed; }
+  .lb-btn.primary{ background: var(--rust); color:#fff; border-color: var(--rust); }
+  .lb-btn.primary:hover{ background: var(--rust-dark); }
+  .lb-zoom-pct{
+    font-family:'IBM Plex Mono', monospace; font-size:11.5px; color: var(--ink-soft);
+    min-width:42px; text-align:center;
+  }
+  .lb-close{
+    font-family:'IBM Plex Mono', monospace; font-size:18px; background:none; border:none;
+    color: var(--ink-soft); cursor:pointer; padding:2px 6px; line-height:1;
+  }
+  .lb-close:hover{ color: var(--rust); }
+  .lb-body{
+    flex:1; overflow:auto; background:#2a2f28;
+    display:flex; align-items:flex-start; justify-content:center;
+    padding:22px;
+  }
+  .lb-body canvas{
+    box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+    background:#fff;
+  }
+  .lb-nav{
+    position:absolute; top:50%; transform:translateY(-50%);
+    width:38px; height:38px; border-radius:50%;
+    background: rgba(31,36,32,0.65); color:#fff; border:none;
+    font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center;
+  }
+  .lb-nav:hover{ background: var(--rust); }
+  .lb-nav:disabled{ opacity:0.25; cursor:not-allowed; background: rgba(31,36,32,0.65); }
+  .lb-nav.prev{ left:8px; }
+  .lb-nav.next{ right:8px; }
+  .lb-panel{ position:relative; }
+  .lb-loading{
+    font-family:'IBM Plex Mono', monospace; font-size:12.5px; color:#cfc9b6;
+    padding:40px;
+  }
+
+  /* Module 2: config */
+  .mode-row{ display:flex; gap:8px; margin-bottom:18px; flex-wrap:wrap; }
+  .mode-btn{
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 12.5px; font-weight:600;
+    padding: 9px 14px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: #fffcf3;
+    color: var(--ink-soft);
+    cursor: pointer;
+    transition: all .12s ease;
+  }
+  .mode-btn:hover{ border-color: var(--rust); color: var(--ink); }
+  .mode-btn.active{
+    background: var(--ink-green);
+    border-color: var(--ink-green);
+    color: var(--paper);
+  }
+  .field-label{
+    display:block; font-size:12.5px; font-weight:600; color: var(--ink-soft);
+    margin-bottom:6px; text-transform:uppercase; letter-spacing:0.04em;
+  }
+  input[type=number], input[type=text]{
+    width:100%;
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 14px;
+    padding: 10px 12px;
+    border:1px solid var(--line);
+    border-radius:3px;
+    background:#fffcf3;
+    color: var(--ink);
+  }
+  input[type=number]:focus, input[type=text]:focus{
+    outline: 2px solid var(--rust); outline-offset:1px; border-color: var(--rust);
+  }
+  .hint{ font-size:12.5px; color: var(--ink-soft); margin-top:6px; line-height:1.5; }
+  .error-msg{
+    font-size: 13px; color: var(--err); margin-top:8px; font-weight:600;
+    display:none;
+  }
+  .error-msg.show{ display:block; }
+
+  .btn-primary{
+    font-family:'IBM Plex Mono', monospace;
+    font-weight:700; font-size:13.5px; letter-spacing:0.03em;
+    background: var(--rust); color:#fff;
+    border:none; border-radius:3px;
+    padding: 12px 20px;
+    cursor:pointer;
+    transition: background .12s ease, transform .1s ease;
+    display:inline-flex; align-items:center; gap:8px;
+  }
+  .btn-primary:hover{ background: var(--rust-dark); }
+  .btn-primary:active{ transform: translateY(1px); }
+  .btn-primary:disabled{ background:#b8ae95; cursor:not-allowed; }
+  .btn-primary:focus-visible{ outline:2px solid var(--ink-green); outline-offset:2px; }
+
+  /* Module 3: preview list with cut lines */
+  .preview-empty{ font-size:13.5px; color: var(--ink-soft); font-style:italic; }
+  .part-row{
+    display:flex; align-items:center; gap:12px;
+    padding: 12px 4px;
+  }
+  .part-num{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px; font-weight:700; color: var(--paper);
+    background: var(--mustard); color: var(--ink);
+    width:26px; height:26px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    flex-shrink:0;
+  }
+  .part-info{ flex:1; }
+  .part-range{ font-weight:600; font-size:14px; }
+  .part-count{ font-size:12.5px; color: var(--ink-soft); font-family:'IBM Plex Mono', monospace; }
+  .cut-line{
+    display:flex; align-items:center; gap:6px;
+    padding: 0 4px;
+    color: var(--rust);
+    opacity: 0.7;
+  }
+  .cut-line .dash{ flex:1; border-top:1px dashed var(--rust); }
+  .cut-line span{ font-size:11px; font-family:'IBM Plex Mono', monospace; }
+
+  /* Module 4: export */
+  .export-summary{
+    font-size:13.5px; color: var(--ink-soft); margin-bottom:16px; line-height:1.6;
+  }
+  .export-summary b{ color: var(--ink); }
+  .progress-wrap{
+    height:6px; background:#e6ded0; border-radius:3px; overflow:hidden; margin: 14px 0 6px;
+    display:none;
+  }
+  .progress-wrap.show{ display:block; }
+  .progress-bar{
+    height:100%; width:0%; background: var(--rust); transition: width .2s ease;
+  }
+  .status-line{ font-size:13px; color: var(--ink-soft); font-family:'IBM Plex Mono', monospace; min-height:18px; }
+  .status-line.ok{ color: var(--ok); font-weight:600; }
+  .status-line.err{ color: var(--err); font-weight:600; }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ animation: none !important; transition: none !important; }
+    .module{ opacity: 1 !important; transform: none !important; }
+  }
+  @media (max-width: 480px){
+    .module{ padding: 20px 16px 22px; }
+  }  @media (max-width: 480px){
+    .step-label{ display:none; }
+    .step-sep{ margin: 0 4px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <h1>PDF.com</h1>
+  </header>
+
+  <div class="step-bar" id="stepBar">
+    <button type="button" class="step-item" data-step="1"><span class="step-num">1</span><span class="step-label">Nạp file</span></button>
+    <span class="step-sep"></span>
+    <button type="button" class="step-item" data-step="2"><span class="step-num">2</span><span class="step-label">Cấu hình</span></button>
+    <span class="step-sep"></span>
+    <button type="button" class="step-item" data-step="3"><span class="step-num">3</span><span class="step-label">Xem trước</span></button>
+    <span class="step-sep"></span>
+    <button type="button" class="step-item" data-step="4"><span class="step-num">4</span><span class="step-label">Xuất file</span></button>
+  </div>
+
+  <!-- MODULE 1: NẠP FILE -->
+  <section class="module" id="mod-upload">
+    <div class="stub">
+      <span class="stub-title">NẠP FILE</span>
+      <span class="stub-line"></span>
+    </div>
+
+    <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Chọn hoặc kéo thả file PDF">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+      <div class="dz-title">Kéo thả file PDF vào đây</div>
+      <div class="dz-sub">hoặc bấm để chọn từ máy</div>
+    </div>
+    <input type="file" id="fileInput" accept="application/pdf">
+
+    <div id="fileCard" class="file-card" style="display:none; margin-top:14px;">
+      <div class="file-icon">PDF</div>
+      <div class="file-meta">
+        <div class="file-name" id="fileName">—</div>
+        <div class="file-sub" id="fileSub">—</div>
+      </div>
+      <button class="file-clear" id="fileClear">Bỏ chọn</button>
+    </div>
+    <div class="error-msg" id="uploadError"></div>
+
+    <div class="page-grid-wrap" id="pageGridWrap" style="display:none;">
+      <div class="page-grid-head">
+        <span class="field-label">Xem trang &amp; chọn nhanh</span>
+        <div style="display:flex; gap:8px;">
+          <button type="button" class="btn-select ghost" id="btnClearSelection">Bỏ chọn</button>
+          <button type="button" class="btn-select" id="btnUseSelection" disabled>Dùng trang đã chọn →</button>
+        </div>
+      </div>
+      <div class="hint" style="margin-bottom:8px;">Bấm vào từng trang để chọn/bỏ chọn, hoặc giữ chuột và kéo qua nhiều trang để chọn/bỏ chọn hàng loạt. Các trang được chọn sẽ tự gộp thành range và chuyển sang chế độ "Tùy chỉnh".</div>
+      <div id="pageGrid" class="page-grid"></div>
+    </div>
+
+    <div class="step-nav" style="justify-content:flex-end;">
+      <button class="btn-primary" id="btnToStep2" disabled>Tiếp tục →</button>
+    </div>
+  </section>
+
+  <!-- MODULE 2: CẤU HÌNH CÁCH CẮT -->
+  <section class="module" id="mod-config">
+    <div class="stub">
+      <span class="stub-title">CẤU HÌNH CÁCH CẮT</span>
+      <span class="stub-line"></span>
+    </div>
+
+    <div class="mode-row">
+      <button class="mode-btn active" data-mode="fixed">Cỡ cố định</button>
+      <button class="mode-btn" data-mode="equal">Chia đều</button>
+      <button class="mode-btn" data-mode="custom">Tùy chỉnh</button>
+    </div>
+
+    <div id="mode-fixed" class="mode-panel">
+      <label class="field-label" for="fixedSize">Số trang mỗi phần</label>
+      <input type="number" id="fixedSize" min="1" value="5">
+      <div class="hint">Ví dụ: file 23 trang, cắt mỗi 5 trang → 5 phần (4 phần đủ 5 trang, phần cuối 3 trang).</div>
+    </div>
+
+    <div id="mode-equal" class="mode-panel" style="display:none;">
+      <label class="field-label" for="equalParts">Chia thành bao nhiêu phần</label>
+      <input type="number" id="equalParts" min="1" value="2">
+      <div class="hint">Số trang sẽ được chia đều nhất có thể — phần đầu nhận thêm trang dư nếu chia không hết.</div>
+    </div>
+
+    <div id="mode-custom" class="mode-panel" style="display:none;">
+      <label class="field-label" for="customRanges">Range trang (phân tách bởi dấu phẩy)</label>
+      <input type="text" id="customRanges" placeholder="vd: 1-5, 8, 10-12">
+      <div class="hint">Mỗi cụm cách nhau bởi dấu phẩy. Một số đơn (vd "8") tách thành file 1 trang. Không cần bao hết toàn bộ file.</div>
+    </div>
+
+    <div style="margin-top:18px;">
+      <label class="field-label" for="nameTemplate">Mẫu tên file xuất (tuỳ chọn)</label>
+      <input type="text" id="nameTemplate" placeholder="vd: Đề {n} — để trống dùng tên mặc định">
+      <div class="hint">Dùng <code>{n}</code> = số thứ tự phần (1,2,3…), <code>{n2}</code> = có số 0 phía trước (01,02…), <code>{start}</code>/<code>{end}</code> = trang bắt đầu/kết thúc, <code>{total}</code> = tổng số phần. Ví dụ với chế độ "Cỡ cố định": mẫu <code>Đề {n}</code> sẽ ra <code>Đề 1.pdf, Đề 2.pdf,…</code></div>
+    </div>
+
+    <div class="error-msg" id="configError"></div>
+
+    <div class="step-nav">
+      <button type="button" class="btn-back" id="btnBackTo1">← Quay lại</button>
+      <button class="btn-primary" id="btnPreview">Xem trước cách cắt →</button>
+    </div>
+  </section>
+
+  <!-- MODULE 3: XEM TRƯỚC -->
+  <section class="module" id="mod-preview">
+    <div class="stub">
+      <span class="stub-title">XEM TRƯỚC</span>
+      <span class="stub-line"></span>
+    </div>
+    <div id="previewList">
+      <div class="preview-empty">Chưa có gì để xem trước — hoàn tất cấu hình cách cắt trước.</div>
+    </div>
+
+    <div class="step-nav">
+      <button type="button" class="btn-back" id="btnBackTo2">← Quay lại</button>
+      <button class="btn-primary" id="btnToStep4">Xuất file →</button>
+    </div>
+  </section>
+
+  <!-- MODULE 4: XUẤT FILE -->
+  <section class="module" id="mod-export">
+    <div class="stub">
+      <span class="stub-title">XUẤT FILE</span>
+      <span class="stub-line"></span>
+    </div>
+    <div class="export-summary" id="exportSummary">Chưa sẵn sàng.</div>
+    <button class="btn-primary" id="btnExport" disabled>✂ Cắt &amp; Tải xuống</button>
+    <div class="progress-wrap" id="progressWrap"><div class="progress-bar" id="progressBar"></div></div>
+    <div class="status-line" id="statusLine"></div>
+
+    <div class="step-nav">
+      <button type="button" class="btn-back" id="btnBackTo3">← Quay lại</button>
+      <span></span>
+    </div>
+  </section>
+
+</div>
+
+<div class="pdf-lightbox" id="pdfLightbox">
+  <div class="lb-panel">
+    <div class="lb-head">
+      <span class="lb-title" id="lbTitle">Trang —</span>
+      <div class="lb-controls">
+        <button type="button" class="lb-btn" id="lbZoomOut" title="Thu nhỏ">−</button>
+        <span class="lb-zoom-pct" id="lbZoomPct">100%</span>
+        <button type="button" class="lb-btn" id="lbZoomIn" title="Phóng to">+</button>
+        <button type="button" class="lb-btn" id="lbZoomReset" title="Vừa khung">Vừa khung</button>
+        <button type="button" class="lb-btn primary" id="lbToggleSelect">Chọn trang này</button>
+      </div>
+      <button type="button" class="lb-close" id="lbClose" aria-label="Đóng">✕</button>
+    </div>
+    <button type="button" class="lb-nav prev" id="lbPrev" aria-label="Trang trước">‹</button>
+    <button type="button" class="lb-nav next" id="lbNext" aria-label="Trang sau">›</button>
+    <div class="lb-body" id="lbBody">
+      <div class="lb-loading" id="lbLoading">Đang tải trang…</div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  if(window.pdfjsLib){
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+
+  // ===================== STATE =====================
+  const state = {
+    file: null,
+    pdfBytes: null,
+    totalPages: 0,
+    mode: 'fixed',
+    parts: []   // [{start, end}] 1-indexed inclusive
+  };
+  const selectedPages = new Set();
+  let pdfJsDoc = null;
+  let thumbObserver = null;
+  let dragSelectActive = false;
+  let dragSelectValue = null;
+  let suppressNextCellClick = false;
+
+  // ===================== DOM REFS =====================
+  const stepBar = document.getElementById('stepBar');
+  const stepItems = document.querySelectorAll('.step-item');
+
+  const modUpload = document.getElementById('mod-upload');
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('fileInput');
+  const fileCard = document.getElementById('fileCard');
+  const fileName = document.getElementById('fileName');
+  const fileSub = document.getElementById('fileSub');
+  const fileClear = document.getElementById('fileClear');
+  const uploadError = document.getElementById('uploadError');
+  const btnToStep2 = document.getElementById('btnToStep2');
+
+  const modConfig = document.getElementById('mod-config');
+  const modPreview = document.getElementById('mod-preview');
+  const modExport = document.getElementById('mod-export');
+
+  const modeButtons = document.querySelectorAll('.mode-btn');
+  const modePanels = {
+    fixed: document.getElementById('mode-fixed'),
+    equal: document.getElementById('mode-equal'),
+    custom: document.getElementById('mode-custom')
+  };
+  const fixedSize = document.getElementById('fixedSize');
+  const equalParts = document.getElementById('equalParts');
+  const customRanges = document.getElementById('customRanges');
+  const nameTemplate = document.getElementById('nameTemplate');
+  const configError = document.getElementById('configError');
+  const btnPreview = document.getElementById('btnPreview');
+  const btnBackTo1 = document.getElementById('btnBackTo1');
+
+  const pageGridWrap = document.getElementById('pageGridWrap');
+  const pageGrid = document.getElementById('pageGrid');
+  const btnUseSelection = document.getElementById('btnUseSelection');
+  const btnClearSelection = document.getElementById('btnClearSelection');
+
+  const previewList = document.getElementById('previewList');
+  const btnBackTo2 = document.getElementById('btnBackTo2');
+  const btnToStep4 = document.getElementById('btnToStep4');
+
+  const exportSummary = document.getElementById('exportSummary');
+  const btnExport = document.getElementById('btnExport');
+  const progressWrap = document.getElementById('progressWrap');
+  const progressBar = document.getElementById('progressBar');
+  const statusLine = document.getElementById('statusLine');
+  const btnBackTo3 = document.getElementById('btnBackTo3');
+
+  // ===================== STEP WIZARD =====================
+  const stepSections = { 1: modUpload, 2: modConfig, 3: modPreview, 4: modExport };
+  let currentStep = 1;
+  let maxUnlockedStep = 1;
+
+  function goToStep(n){
+    currentStep = n;
+    if(n > maxUnlockedStep) maxUnlockedStep = n;
+    Object.keys(stepSections).forEach(k => {
+      stepSections[k].style.display = (parseInt(k, 10) === n) ? '' : 'none';
+    });
+    updateStepBar();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function updateStepBar(){
+    stepItems.forEach(item => {
+      const s = parseInt(item.dataset.step, 10);
+      item.classList.toggle('active', s === currentStep);
+      item.classList.toggle('done', s < currentStep);
+      item.disabled = s > maxUnlockedStep;
+    });
+  }
+
+  stepItems.forEach(item => {
+    item.addEventListener('click', () => {
+      const s = parseInt(item.dataset.step, 10);
+      if(s <= maxUnlockedStep) goToStep(s);
+    });
+  });
+
+  // ===================== HELPERS =====================
+  function fmtBytes(b){
+    if(b < 1024) return b + ' B';
+    if(b < 1024*1024) return (b/1024).toFixed(1) + ' KB';
+    return (b/(1024*1024)).toFixed(2) + ' MB';
+  }
+  function showError(el, msg){
+    el.textContent = msg;
+    el.classList.add('show');
+  }
+  function clearError(el){
+    el.textContent = '';
+    el.classList.remove('show');
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  function resetDownstream(){
+    previewList.innerHTML = '<div class="preview-empty">Chưa có gì để xem trước — hoàn tất cấu hình cách cắt trước.</div>';
+    btnExport.disabled = true;
+    statusLine.textContent = '';
+    statusLine.className = 'status-line';
+    progressWrap.classList.remove('show');
+    state.parts = [];
+    if(maxUnlockedStep > 2) maxUnlockedStep = 2;
+    updateStepBar();
+  }
+
+  btnToStep2.addEventListener('click', () => goToStep(2));
+  btnBackTo1.addEventListener('click', () => goToStep(1));
+  btnBackTo2.addEventListener('click', () => goToStep(2));
+  btnBackTo3.addEventListener('click', () => goToStep(3));
+  btnToStep4.addEventListener('click', () => goToStep(4));
+
+  // ===================== MODULE 1: UPLOAD =====================
+  dropzone.addEventListener('click', () => fileInput.click());
+  dropzone.addEventListener('keydown', (e) => {
+    if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); fileInput.click(); }
+  });
+  ['dragover','dragenter'].forEach(evt => {
+    dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.add('drag'); });
+  });
+  ['dragleave','drop'].forEach(evt => {
+    dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.remove('drag'); });
+  });
+  dropzone.addEventListener('drop', (e) => {
+    const f = e.dataTransfer.files[0];
+    if(f) handleFile(f);
+  });
+  fileInput.addEventListener('change', (e) => {
+    const f = e.target.files[0];
+    if(f) handleFile(f);
+  });
+  fileClear.addEventListener('click', () => {
+    state.file = null; state.pdfBytes = null; state.totalPages = 0;
+    fileCard.style.display = 'none';
+    dropzone.style.display = 'block';
+    fileInput.value = '';
+    btnToStep2.disabled = true;
+    maxUnlockedStep = 1;
+    resetDownstream();
+    goToStep(1);
+    clearError(uploadError);
+    clearThumbnails();
+  });
+
+  function clearThumbnails(){
+    if(thumbObserver){ thumbObserver.disconnect(); thumbObserver = null; }
+    pdfJsDoc = null;
+    selectedPages.clear();
+    pageGrid.innerHTML = '';
+    pageGridWrap.style.display = 'none';
+    updateSelectionButton();
+    closeLightbox();
+    dragSelectActive = false;
+    dragSelectValue = null;
+  }
+
+  async function handleFile(f){
+    clearError(uploadError);
+    if(f.type !== 'application/pdf' && !f.name.toLowerCase().endsWith('.pdf')){
+      showError(uploadError, 'File này không phải PDF. Vui lòng chọn file .pdf');
+      return;
+    }
+    try{
+      const buf = await f.arrayBuffer();
+      const pdfDoc = await PDFLib.PDFDocument.load(buf, { ignoreEncryption: true });
+      const pageCount = pdfDoc.getPageCount();
+      if(pageCount < 1){
+        showError(uploadError, 'File PDF này không có trang nào.');
+        return;
+      }
+      state.file = f;
+      state.pdfBytes = buf;
+      state.totalPages = pageCount;
+
+      fileName.textContent = f.name;
+      fileSub.textContent = pageCount + ' trang · ' + fmtBytes(f.size);
+      fileCard.style.display = 'flex';
+      dropzone.style.display = 'none';
+
+      resetDownstream();
+      updateModeHints();
+      renderThumbnails(buf, pageCount);
+      btnToStep2.disabled = false;
+    }catch(err){
+      showError(uploadError, 'Không đọc được file này. File có thể bị hỏng hoặc mã hoá theo cách không hỗ trợ.');
+    }
+  }
+
+  // ===================== THUMBNAIL PAGE PICKER =====================
+  async function renderThumbnails(bytes, totalPages){
+    clearThumbnails();
+    if(!window.pdfjsLib) return;
+    try{
+      pdfJsDoc = await pdfjsLib.getDocument({ data: bytes.slice(0) }).promise;
+    }catch(err){
+      return; // silently skip thumbnails if pdf.js can't parse it; splitting still works
+    }
+    pageGridWrap.style.display = 'block';
+    const frag = document.createDocumentFragment();
+    for(let i = 1; i <= totalPages; i++){
+      const cell = document.createElement('div');
+      cell.className = 'page-thumb';
+      cell.dataset.page = String(i);
+      cell.setAttribute('role', 'button');
+      cell.setAttribute('tabindex', '0');
+      cell.setAttribute('aria-label', 'Trang ' + i);
+      cell.innerHTML = '<span class="pg-check">✓</span><span class="pg-num">' + i + '</span><button type="button" class="pg-zoom" title="Phóng to xem trang" aria-label="Phóng to xem trang ' + i + '">⤢</button>';
+      cell.addEventListener('mousedown', (e) => {
+        if(e.button !== 0) return;
+        if(e.target.closest('.pg-zoom')) return;
+        e.preventDefault();
+        dragSelectActive = true;
+        dragSelectValue = !selectedPages.has(i);
+        applyDragSelect(i, cell, dragSelectValue);
+        updateSelectionButton();
+        suppressNextCellClick = true;
+      });
+      cell.addEventListener('click', () => {
+        if(suppressNextCellClick){ suppressNextCellClick = false; return; }
+        togglePageSelect(i, cell);
+      });
+      cell.addEventListener('keydown', (e) => {
+        if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); togglePageSelect(i, cell); }
+      });
+      cell.querySelector('.pg-zoom').addEventListener('click', (e) => {
+        e.stopPropagation();
+        openLightbox(i);
+      });
+      frag.appendChild(cell);
+    }
+    pageGrid.appendChild(frag);
+
+    thumbObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if(entry.isIntersecting){
+          thumbObserver.unobserve(entry.target);
+          renderThumbPage(parseInt(entry.target.dataset.page, 10), entry.target);
+        }
+      });
+    }, { root: pageGrid, rootMargin: '250px' });
+    pageGrid.querySelectorAll('.page-thumb').forEach(c => thumbObserver.observe(c));
+  }
+
+  async function renderThumbPage(pageNum, cell){
+    if(!pdfJsDoc) return;
+    try{
+      const page = await pdfJsDoc.getPage(pageNum);
+      const baseViewport = page.getViewport({ scale: 1 });
+      const scale = 100 / baseViewport.width;
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      const ctx = canvas.getContext('2d');
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      cell.insertBefore(canvas, cell.firstChild);
+    }catch(err){
+      // skip failed page render, cut-lines/numbers still show
+    }
+  }
+
+  // ===================== LIGHTBOX: ENLARGED PAGE VIEWER =====================
+  const pdfLightbox = document.getElementById('pdfLightbox');
+  const lbBody = document.getElementById('lbBody');
+  const lbTitle = document.getElementById('lbTitle');
+  const lbClose = document.getElementById('lbClose');
+  const lbPrev = document.getElementById('lbPrev');
+  const lbNext = document.getElementById('lbNext');
+  const lbZoomIn = document.getElementById('lbZoomIn');
+  const lbZoomOut = document.getElementById('lbZoomOut');
+  const lbZoomReset = document.getElementById('lbZoomReset');
+  const lbZoomPct = document.getElementById('lbZoomPct');
+  const lbToggleSelect = document.getElementById('lbToggleSelect');
+
+  let lbPage = 0;
+  let lbBaseScale = 1;   // scale that fits the panel width at 100%
+  let lbZoom = 1;        // user zoom multiplier on top of base scale
+  let lbRenderToken = 0;
+
+  function openLightbox(pageNum){
+    if(!pdfJsDoc) return;
+    lbPage = pageNum;
+    lbZoom = 1;
+    pdfLightbox.classList.add('open');
+    document.addEventListener('keydown', lbKeydown);
+    renderLightboxPage();
+  }
+
+  function closeLightbox(){
+    pdfLightbox.classList.remove('open');
+    document.removeEventListener('keydown', lbKeydown);
+  }
+
+  function lbKeydown(e){
+    if(e.key === 'Escape'){ closeLightbox(); }
+    else if(e.key === 'ArrowLeft'){ lbStep(-1); }
+    else if(e.key === 'ArrowRight'){ lbStep(1); }
+    else if(e.key === '+' || e.key === '='){ lbSetZoom(lbZoom + 0.25); }
+    else if(e.key === '-'){ lbSetZoom(lbZoom - 0.25); }
+  }
+
+  function lbStep(delta){
+    const next = lbPage + delta;
+    if(next < 1 || next > state.totalPages) return;
+    lbPage = next;
+    lbZoom = 1;
+    renderLightboxPage();
+  }
+
+  function lbSetZoom(z){
+    lbZoom = Math.max(0.25, Math.min(4, z));
+    drawLightboxCanvas();
+  }
+
+  let lbCurrentPageObj = null;
+  let lbCurrentCanvas = null;
+
+  async function renderLightboxPage(){
+    const myToken = ++lbRenderToken;
+    lbTitle.textContent = 'Trang ' + lbPage + ' / ' + state.totalPages;
+    lbPrev.disabled = lbPage <= 1;
+    lbNext.disabled = lbPage >= state.totalPages;
+    lbToggleSelect.textContent = selectedPages.has(lbPage) ? 'Bỏ chọn trang này' : 'Chọn trang này';
+    lbBody.innerHTML = '<div class="lb-loading" id="lbLoading">Đang tải trang…</div>';
+    try{
+      const page = await pdfJsDoc.getPage(lbPage);
+      if(myToken !== lbRenderToken) return;
+      lbCurrentPageObj = page;
+      const baseViewport = page.getViewport({ scale: 1 });
+      const panelWidth = Math.max(280, lbBody.clientWidth - 44);
+      lbBaseScale = panelWidth / baseViewport.width;
+      drawLightboxCanvas();
+    }catch(err){
+      if(myToken !== lbRenderToken) return;
+      lbBody.innerHTML = '<div class="lb-loading">Không thể hiển thị trang này.</div>';
+    }
+  }
+
+  async function drawLightboxCanvas(){
+    if(!lbCurrentPageObj) return;
+    const myToken = lbRenderToken;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    const effScale = lbBaseScale * lbZoom;
+    const viewport = lbCurrentPageObj.getViewport({ scale: effScale * dpr });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    canvas.style.width = Math.ceil(viewport.width / dpr) + 'px';
+    canvas.style.height = Math.ceil(viewport.height / dpr) + 'px';
+    const ctx = canvas.getContext('2d');
+    try{
+      await lbCurrentPageObj.render({ canvasContext: ctx, viewport }).promise;
+    }catch(err){ return; }
+    if(myToken !== lbRenderToken) return;
+    lbBody.innerHTML = '';
+    lbBody.appendChild(canvas);
+    lbCurrentCanvas = canvas;
+    lbZoomPct.textContent = Math.round(lbZoom * 100) + '%';
+  }
+
+  lbClose.addEventListener('click', closeLightbox);
+  pdfLightbox.addEventListener('click', (e) => { if(e.target === pdfLightbox) closeLightbox(); });
+  lbPrev.addEventListener('click', () => lbStep(-1));
+  lbNext.addEventListener('click', () => lbStep(1));
+  lbZoomIn.addEventListener('click', () => lbSetZoom(lbZoom + 0.25));
+  lbZoomOut.addEventListener('click', () => lbSetZoom(lbZoom - 0.25));
+  lbZoomReset.addEventListener('click', () => lbSetZoom(1));
+  lbToggleSelect.addEventListener('click', () => {
+    const cell = pageGrid.querySelector('.page-thumb[data-page="' + lbPage + '"]');
+    if(cell) togglePageSelect(lbPage, cell);
+    lbToggleSelect.textContent = selectedPages.has(lbPage) ? 'Bỏ chọn trang này' : 'Chọn trang này';
+  });
+
+  function applyDragSelect(n, cell, val){
+    if(val){
+      if(!selectedPages.has(n)){ selectedPages.add(n); cell.classList.add('selected'); }
+    }else{
+      if(selectedPages.has(n)){ selectedPages.delete(n); cell.classList.remove('selected'); }
+    }
+  }
+
+  document.addEventListener('mousemove', (e) => {
+    if(!dragSelectActive) return;
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const cell = el ? el.closest('.page-thumb') : null;
+    if(cell && pageGrid.contains(cell)){
+      const n = parseInt(cell.dataset.page, 10);
+      applyDragSelect(n, cell, dragSelectValue);
+      updateSelectionButton();
+    }
+    // auto-scroll the grid when dragging near its top/bottom edge
+    const rect = pageGrid.getBoundingClientRect();
+    const margin = 28;
+    if(e.clientY < rect.top + margin && e.clientY > rect.top - 20){
+      pageGrid.scrollTop -= 14;
+    }else if(e.clientY > rect.bottom - margin && e.clientY < rect.bottom + 20){
+      pageGrid.scrollTop += 14;
+    }
+  });
+  document.addEventListener('mouseup', () => {
+    dragSelectActive = false;
+    dragSelectValue = null;
+  });
+
+  function togglePageSelect(n, cell){
+    if(selectedPages.has(n)){
+      selectedPages.delete(n);
+      cell.classList.remove('selected');
+    }else{
+      selectedPages.add(n);
+      cell.classList.add('selected');
+    }
+    updateSelectionButton();
+  }
+
+  function updateSelectionButton(){
+    const count = selectedPages.size;
+    btnUseSelection.disabled = count === 0;
+    btnUseSelection.textContent = count ? 'Dùng ' + count + ' trang đã chọn →' : 'Dùng trang đã chọn →';
+  }
+
+  function pagesToRangeString(pages){
+    const sorted = Array.from(pages).sort((a, b) => a - b);
+    const ranges = [];
+    let start = sorted[0], prev = sorted[0];
+    for(let i = 1; i < sorted.length; i++){
+      if(sorted[i] === prev + 1){ prev = sorted[i]; continue; }
+      ranges.push(start === prev ? String(start) : start + '-' + prev);
+      start = sorted[i]; prev = sorted[i];
+    }
+    ranges.push(start === prev ? String(start) : start + '-' + prev);
+    return ranges.join(', ');
+  }
+
+  btnClearSelection.addEventListener('click', () => {
+    selectedPages.clear();
+    pageGrid.querySelectorAll('.page-thumb.selected').forEach(c => c.classList.remove('selected'));
+    updateSelectionButton();
+  });
+
+  btnUseSelection.addEventListener('click', () => {
+    if(selectedPages.size === 0) return;
+    customRanges.value = pagesToRangeString(selectedPages);
+    state.mode = 'custom';
+    modeButtons.forEach(b => b.classList.toggle('active', b.dataset.mode === 'custom'));
+    Object.keys(modePanels).forEach(k => {
+      modePanels[k].style.display = (k === 'custom') ? 'block' : 'none';
+    });
+    clearError(configError);
+    resetDownstream();
+  });
+
+  // ===================== MODULE 2: CONFIG =====================
+  modeButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      modeButtons.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      state.mode = btn.dataset.mode;
+      Object.keys(modePanels).forEach(k => {
+        modePanels[k].style.display = (k === state.mode) ? 'block' : 'none';
+      });
+      clearError(configError);
+      resetDownstream();
+    });
+  });
+
+  function updateModeHints(){
+    fixedSize.max = state.totalPages;
+    equalParts.max = state.totalPages;
+  }
+
+  // Core splitting logic — computes 1-indexed inclusive page ranges
+  function computeParts(mode, totalPages, params){
+    if(mode === 'fixed'){
+      const n = params.fixedSize;
+      if(!Number.isInteger(n) || n < 1){
+        throw new Error('Số trang mỗi phần phải là số nguyên ≥ 1.');
+      }
+      const parts = [];
+      for(let start = 1; start <= totalPages; start += n){
+        const end = Math.min(start + n - 1, totalPages);
+        parts.push({ start, end });
+      }
+      return parts;
+    }
+
+    if(mode === 'equal'){
+      const k = params.equalParts;
+      if(!Number.isInteger(k) || k < 1){
+        throw new Error('Số phần phải là số nguyên ≥ 1.');
+      }
+      if(k > totalPages){
+        throw new Error('Số phần (' + k + ') không thể nhiều hơn tổng số trang (' + totalPages + ').');
+      }
+      const base = Math.floor(totalPages / k);
+      const remainder = totalPages % k;
+      const parts = [];
+      let cursor = 1;
+      for(let i = 0; i < k; i++){
+        const size = base + (i < remainder ? 1 : 0);
+        const start = cursor;
+        const end = cursor + size - 1;
+        parts.push({ start, end });
+        cursor = end + 1;
+      }
+      return parts;
+    }
+
+    if(mode === 'custom'){
+      const raw = (params.customRanges || '').trim();
+      if(!raw){
+        throw new Error('Nhập ít nhất một range, ví dụ: 1-5, 8, 10-12');
+      }
+      const chunks = raw.split(',').map(s => s.trim()).filter(Boolean);
+      if(chunks.length === 0){
+        throw new Error('Nhập ít nhất một range, ví dụ: 1-5, 8, 10-12');
+      }
+      const parts = [];
+      for(const chunk of chunks){
+        const m = chunk.match(/^(\d+)(?:\s*-\s*(\d+))?$/);
+        if(!m){
+          throw new Error('Cụm "' + chunk + '" không hợp lệ. Dùng dạng "1-5" hoặc "8".');
+        }
+        let start = parseInt(m[1], 10);
+        let end = m[2] ? parseInt(m[2], 10) : start;
+        if(start > end){ [start, end] = [end, start]; }
+        if(start < 1 || end > totalPages){
+          throw new Error('Cụm "' + chunk + '" vượt phạm vi trang (1–' + totalPages + ').');
+        }
+        parts.push({ start, end });
+      }
+      parts.sort((a,b) => a.start - b.start);
+      return parts;
+    }
+
+    throw new Error('Chế độ cắt không hợp lệ.');
+  }
+
+  btnPreview.addEventListener('click', () => {
+    clearError(configError);
+    try{
+      const params = {
+        fixedSize: parseInt(fixedSize.value, 10),
+        equalParts: parseInt(equalParts.value, 10),
+        customRanges: customRanges.value
+      };
+      const parts = computeParts(state.mode, state.totalPages, params);
+      state.parts = parts;
+      renderPreview(parts);
+      btnExport.disabled = false;
+      updateExportSummary();
+      statusLine.textContent = '';
+      statusLine.className = 'status-line';
+      progressWrap.classList.remove('show');
+      progressBar.style.width = '0%';
+      goToStep(3);
+    }catch(err){
+      showError(configError, err.message);
+      resetDownstream();
+    }
+  });
+
+  // ===================== MODULE 3: PREVIEW =====================
+  function renderPreview(parts){
+    previewList.innerHTML = '';
+    parts.forEach((p, i) => {
+      const row = document.createElement('div');
+      row.className = 'part-row';
+      const count = p.end - p.start + 1;
+      row.innerHTML =
+        '<span class="part-num">' + (i+1) + '</span>' +
+        '<div class="part-info">' +
+          '<div class="part-range">Trang ' + p.start + (p.end !== p.start ? '–' + p.end : '') + '</div>' +
+          '<div class="part-count">' + count + ' trang</div>' +
+        '</div>';
+      previewList.appendChild(row);
+
+      if(i < parts.length - 1){
+        const cut = document.createElement('div');
+        cut.className = 'cut-line';
+        cut.innerHTML = '<span>✂ cắt tại đây</span><span class="dash"></span>';
+        previewList.appendChild(cut);
+      }
+    });
+  }
+
+  function updateExportSummary(){
+    const n = state.parts.length;
+    exportSummary.innerHTML = 'Sẽ tạo <b>' + n + ' file PDF</b> từ <b>' + escapeHtml(state.file.name) + '</b>' +
+      (n > 1 ? ', đóng gói chung trong một file .zip.' : '.');
+
+    const template = (nameTemplate.value || '').trim();
+    if(template && n > 0){
+      const baseName = state.file.name.replace(/\.pdf$/i, '');
+      const p0 = state.parts[0];
+      const sample = sanitizeFileName(applyTemplate(template, {
+        n: 1, n2: '01', start: p0.start, end: p0.end, total: n, basename: baseName
+      })) + '.pdf';
+      exportSummary.innerHTML += ' Tên file theo mẫu, vd: <b>' + escapeHtml(sample) + '</b>' + (n > 1 ? ', ...' : '');
+    }
+  }
+
+  function applyTemplate(template, vars){
+    return template
+      .replace(/\{n2\}/g, vars.n2)
+      .replace(/\{n\}/g, vars.n)
+      .replace(/\{start\}/g, vars.start)
+      .replace(/\{end\}/g, vars.end)
+      .replace(/\{total\}/g, vars.total)
+      .replace(/\{basename\}/g, vars.basename);
+  }
+
+  function sanitizeFileName(name){
+    const cleaned = String(name).replace(/[\\/:*?"<>|]/g, '_').trim();
+    return cleaned || 'phan';
+  }
+
+  nameTemplate.addEventListener('input', () => {
+    if(state.parts.length) updateExportSummary();
+  });
+
+  // ===================== MODULE 4: EXPORT / SPLIT ENGINE =====================
+  async function splitPDF(parts, onProgress){
+    const srcDoc = await PDFLib.PDFDocument.load(state.pdfBytes, { ignoreEncryption: true });
+    const results = [];
+    const baseName = state.file.name.replace(/\.pdf$/i, '');
+    const template = (nameTemplate.value || '').trim();
+    const usedNames = new Set();
+
+    for(let i = 0; i < parts.length; i++){
+      const p = parts[i];
+      const outDoc = await PDFLib.PDFDocument.create();
+      const indices = [];
+      for(let pg = p.start; pg <= p.end; pg++) indices.push(pg - 1);
+      const copied = await outDoc.copyPages(srcDoc, indices);
+      copied.forEach(pg => outDoc.addPage(pg));
+      const bytes = await outDoc.save();
+
+      let name;
+      if(template){
+        name = sanitizeFileName(applyTemplate(template, {
+          n: i + 1, n2: String(i + 1).padStart(2, '0'),
+          start: p.start, end: p.end, total: parts.length, basename: baseName
+        }));
+      }else{
+        const rangeLabel = p.start === p.end ? ('trang' + p.start) : ('trang' + p.start + '-' + p.end);
+        name = baseName + '_phan' + (i+1) + '_' + rangeLabel;
+      }
+      if(!/\.pdf$/i.test(name)) name += '.pdf';
+
+      let finalName = name;
+      let counter = 2;
+      while(usedNames.has(finalName.toLowerCase())){
+        finalName = name.replace(/\.pdf$/i, '') + '_' + counter + '.pdf';
+        counter++;
+      }
+      usedNames.add(finalName.toLowerCase());
+
+      results.push({ name: finalName, bytes });
+      onProgress((i+1) / parts.length);
+    }
+    return results;
+  }
+
+  function downloadBlob(bytes, filename, mime){
+    const blob = new Blob([bytes], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+
+  btnExport.addEventListener('click', async () => {
+    btnExport.disabled = true;
+    progressWrap.classList.add('show');
+    progressBar.style.width = '0%';
+    statusLine.className = 'status-line';
+    statusLine.textContent = 'Đang cắt file…';
+
+    try{
+      const results = await splitPDF(state.parts, (frac) => {
+        progressBar.style.width = Math.round(frac * 100) + '%';
+      });
+
+      if(results.length === 1){
+        downloadBlob(results[0].bytes, results[0].name, 'application/pdf');
+      }else{
+        statusLine.textContent = 'Đang đóng gói .zip…';
+        const zip = new JSZip();
+        results.forEach(r => zip.file(r.name, r.bytes));
+        const zipBytes = await zip.generateAsync({ type: 'uint8array' });
+        const baseName = state.file.name.replace(/\.pdf$/i, '');
+        downloadBlob(zipBytes, baseName + '_da_cat.zip', 'application/zip');
+      }
+
+      statusLine.classList.add('ok');
+      statusLine.textContent = '✓ Xong — đã tạo ' + results.length + ' file PDF.';
+    }catch(err){
+      statusLine.classList.add('err');
+      statusLine.textContent = 'Có lỗi khi cắt file: ' + err.message;
+    }finally{
+      btnExport.disabled = false;
+    }
+  });
+
+  // ===================== INIT =====================
+  goToStep(1);
+
+})();
+</script>
+</body>
+</html>
